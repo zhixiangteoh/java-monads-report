@@ -1,0 +1,554 @@
+%%%%%%%%%%%%%%%%%%%%%%% file template.tex %%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% This is a template file for The European Physical Journal PLUS
+%
+% Copy it to a new file with a new name and use it as the basis
+% for your article
+%
+%%%%%%%%%%%%%%%%%%%%%%%% Springer-Verlag / Societa` Italiana di Fisica  %%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\begin{filecontents}{leer.eps}
+%!PS-Adobe-2.0 EPSF-2.0
+%%CreationDate: Mon Jul 13 16:51:17 1992
+%%DocumentFonts: (atend)
+%%Pages: 0 1
+%%BoundingBox: 72 31 601 342
+%%EndCommentshttps://www.overleaf.com/project/5f328b897af7560001a3553e
+
+gsave
+72 31 moveto
+72 342 lineto
+601 342 lineto
+601 31 lineto
+72 31 lineto
+showpage
+grestore
+%%Trailer
+%%DocumentFonts: Helvetica
+\end{filecontents}
+%
+\documentclass[epj]{svjour}
+% Remove option referee for final version
+%
+% Remove any % below to load the required packages
+%\usepackage{latexsym}
+\usepackage{graphics}
+\usepackage{minted}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+}
+%
+\begin{document}
+%
+\title{Monads in Java}
+\author{First author\inst{1} \and Second author\inst{2} \and Teoh Zhixiang\inst{3}
+}                     % Do not remove
+%
+%%\offprints{}          % Insert a name or remove this line
+%
+\institute{e1234567@u.nus.edu \and e1234567@u.nus.edu \and e0426126@u.nus.edu}
+%
+\date{Revised version: 12 November 2020}
+% The correct dates will be entered by Springer
+%
+\abstract{
+Monads are one of the core functional programming concepts, indispensable to several pure languages like Haskell and Scala, in order to preserve referential transparency and side-effect free computation. This paper explores the translation of monads in functional programming languages, particularly Haskell, to the syntax of Java. It first discusses what monads in Java entail, then delves into use cases for monads in Java, and finally closes with comparing the differences between using and not using monads in Java.
+%
+\PACS{
+      {PACS-key}{discribing text of that key}   \and
+      {PACS-key}{discribing text of that key}
+     } % end of PACS codes
+} %end of abstract
+%
+\maketitle
+%
+\section{Introduction}
+\label{intro}
+
+\section{Monads in Java}
+\label{sec:1}
+
+\subsection{Subsection title}
+\label{sec:2}
+
+\section{Use Cases of Monads in Java}
+\label{sec:3}
+
+\subsection{Purpose and Possible Areas of Use}
+\label{sec:4}
+
+\subsection{Foundation of Java Monads}
+\label{sec:5}
+
+The discussion of monads in programming languages rarely, if ever, escapes allusion to Haskell syntax. In other words, the concept of monads (in functional programming) has become synonymous with Haskell's Control.Monad Typeclass:
+
+\begin{minted}{haskell}
+class Applicative m => Monad (m :: * -> *) where
+  (>>=) :: m a -> (a -> m b) -> m b
+  (>>) :: m a -> m b -> m b
+  return :: a -> m a
+\end{minted}
+
+In our discussion that follows, we shall simplify the above definition to the following:
+
+\begin{minted}{haskell}
+class Monad m where
+  bind :: m a -> (a -> m b) -> m b
+  unit :: a -> m a
+\end{minted}
+
+This definition is more intuitive, leaves out finer details of Applicatives and the chaining $(>>)$ operator, but at the same time is more in line with the minimal fundamental description of monads in functional programming, that mandates defining the return and bind operators\footnote{From Haskell Docs on Control.Monad. In fact, the "minimal complete definition" requires only the bind operator, $(>>=)$.}\footnote{Haskell Docs on \href{https://hackage.haskell.org/package/base-4.14.0.0/docs/Control-Monad.html}{Control.Monad}}. Additionally, monad instances have to abide by the following three Monad Laws:
+
+\begin{enumerate}
+    \item Left identity; i.e., binding a context-wrapped value to a function (of the form $a \to m\;b$) is equivalent to the function evaluated with the unwrapped value, as in $(a \to m\;b)\;a = m\;b$:
+    \begin{minted}{haskell}
+    bind (unit a) f = f a
+    \end{minted}
+    \begin{minted}{java}
+    // in Java (== represents equivalence),
+    bind(unit(a), f) == f(a)
+    \end{minted}
+    \item Right identity; i.e., binding a monad to the unit function (of the form $a \to m\;a$) is equivalent to the monad, since unit "lifts" or "wraps" the value (that was unwrapped implicitly in bind):
+    \begin{minted}{haskell}
+    bind m unit = m
+    \end{minted}
+    \begin{minted}{java}
+    // in Java (== represents equivalence),
+    bind(m, unit) == m
+    \end{minted}
+    \item Associativity; i.e., the order of bind does not matter:
+    \begin{minted}{haskell}
+    bind m (\x -> bind (f x) g) = bind (bind m f) g
+    \end{minted}
+    \begin{minted}{java}
+    // in Java (== represents equivalence),
+    bind(bind(m, f), g) == bind(m, x -> g(f(x)))
+    \end{minted}
+\end{enumerate}
+
+This means that a proper definition of monads in Java ideally checks all boxes, both defining the bind and unit operators and ensuring the Monad Laws are preserved. For the former, Java 8's Functional interface and generics type system allows us to translate the above Haskell definitions to Java syntax.
+
+The unit operator "lifts" an "unwrapped" value to a context-wrapped type. In Java syntax, this is represented as:
+\begin{minted}{java}
+static <A> M<A> unit(A a)
+\end{minted}
+
+This means "unit is a method that takes in an object of unwrapped generic type $A$, and returns an object of monadic context-wrapped generic type $M\langle A \rangle$".
+
+In Haskell, functions are curried, so the bind function is actually a function that takes in one argument $m\;a$, then returns a function that takes in a function of the form ($a \to m\;b$) and returns $m\;b$. Using Java 8's Functional Interface, the bind operator is directly translated from Haskell as:
+\begin{minted}{java}
+static <A, B> Function<Function<A, M<B>>, M<B>> bind(M<A> m)
+\end{minted}
+
+However, at first glance, the uninitiated and untrained eye might not be able to as easily glean the return type of the bind function. To keep more in line with the flavor of Java syntax, we rewrite it as:
+\begin{minted}{java}
+static <A, B> M<B> bind(M<A> m, Function<A, M<B>> f)
+\end{minted}
+
+Notice how the arity of the first variant is 1, while that of the second variant is 2. With these definitions, any Java class that we want to implement with monadic capabilities need only define their individual implementations of these methods, as we shall see in the following sections. The conformity of the methods to the described Monad Laws is implementation-dependent, as we shall see.
+
+\subsection{Examples of Monad Implementations in Java}
+\label{sec:6}
+
+Unfortunately, Java's inherent type system is not "high-level" or "strong" enough to support a Haskell-like Typeclass implementation of monads, via Java interfaces. We will first explore some examples of monad implementations in Java, and their syntax and implications, to gain insight into the flavour of functional programming in Java. Then, we will use this insight to discuss the limitations of Java's type system in implementing a generic monad interface similar to Haskell's Monad Typeclass.
+
+\subsubsection{Optional Class}
+\label{sec:7}
+
+The Optional monad in Java aims to resemble Haskell's Maybe monad instance. As a result, we include Haskell's Maybe monad as our reference. From Haskell Docs, the Maybe type "is a simple kind of error monad, where all errors are represented by Nothing." In short, the Maybe type is a sum type of two possible values, Just and Nothing. The instance definition of Haskell's Maybe is:
+
+\begin{minted}{haskell}
+instance Monad Maybe where
+    (Just x) >>= k = k x
+    Nothing  >>= _ = Nothing
+\end{minted}
+
+Notice that the unit (or return) method is implicit here; it is assumed to simply be of the form $(x \to \mathrm{Maybe}\;x)$. Translating this to align with our previous definitions of unit and bind:
+
+\begin{minted}{haskell}
+instance Monad Maybe where
+    unit x          = Maybe x
+    bind (Just x) k = k x
+    bind Nothing  _ = Nothing
+\end{minted}
+
+We shall endeavour to define a similar Java class, Maybe, that implements these methods.
+
+\begin{minted}{Java}
+import java.util.function.Function;
+
+class Maybe<A> {
+    private A a;
+
+    private Maybe(A aVal) {
+        if (!isNull(aVal)) a = aVal;
+        else a = null;
+    }
+    static <A> Maybe<A> unit(A a) {
+        return new Maybe<>(a);
+    }
+    <B> Maybe<B> bind(Function<A, Maybe<B>> f) {
+        if (!isNull(a)) return f.apply(a);
+        else return new Maybe<B>(null);
+    }
+    boolean isNull(A a) {
+        return a == null;
+    }
+    public String toString() {
+        if (!isNull(a)) return "Just " + a;
+        else return "Nothing";
+    }
+    public static void main(String[] args) {
+        Maybe<Integer> a = Maybe.unit(3);
+        Maybe<Integer> b = Maybe.unit(null);
+        
+        Maybe<Integer> sum = 
+            a.bind(val1 -> 
+            b.bind(val2 -> 
+            Maybe.unit(val1 + val2)  
+        ));
+
+        System.out.println(sum); // Nothing
+    }
+}
+\end{minted}
+
+A few things to note in the above implementation:
+
+\begin{itemize}
+    \item The return type and parameters of bind are changed to reflect an instance method implementation, with the original first monad parameter being implicitly represented by the monad object instance
+    \item sum is the result of a series of chained bind operations
+    \item The arguments $\mathrm{Function}\langle A, \mathrm{Maybe}\langle B\rangle\rangle\;\mathrm{f}$ here are implicitly defined via Java 8's lambda notation, as in $(\mathrm{val1} \to \ldots)$
+\end{itemize}
+
+The above implementation proves to us that it is entirely possible to create Java synonyms of select monad types, and with a modest amount of code. The Maybe type is so useful and ubiquitous that other languages, like \href{https://docs.swift.org/swift-book/LanguageGuide/TheBasics.html#ID330}{Swift}\footnote{Swift's Optional defines a bind operation, and is known for its "Optional chaining" capabilities}, now have synonymous implementations. In Java, like Swift, the synonymous monad class is the Optional\footnote{For explanations or discussion on super and extends, see \cite{bert-f-generics}} \cite{java-optional-source} class, with these key method implementations:
+
+\begin{minted}{java}
+public T get() {
+    if (value == null) throw new NoSuchElementException("No value present");
+    return value;
+}
+public T orElse(T other) {
+    return value != null ? value : other;
+}
+public static <T> Optional<T> ofNullable(T value) {
+    return value == null ? empty() : of(value);
+}
+public<U> Optional<U> map(Function<? super T, ? extends U> mapper) {
+    Objects.requireNonNull(mapper);
+    if (!isPresent()) return empty();
+    else return Optional.ofNullable(mapper.apply(value));
+}
+public<U> Optional<U> flatMap(Function<? super T, Optional<U>> mapper) {
+    Objects.requireNonNull(mapper);
+    if (!isPresent()) return empty();
+    else return Objects.requireNonNull(mapper.apply(value));
+}
+\end{minted}
+
+Here, ofNullable corresponds to unit, and flatMap corresponds to bind. Nothing is represented by null, and Just is represented by simply the object's non-null value. The next natural question to answer is whether the Optional class obeys the Monad Laws. To investigate this, we test \cite{optional-breaks-monad-laws} the left-identity, right-identity, and associativity, of the flatMap (bind) operator.
+
+Testing left-identity:
+\begin{minted}{java}
+import java.util.function.Function;
+import java.util.Optional;
+
+public class OptionalTestLeftIdentity {
+    public static void main(String[] args) {
+        Function<Integer, Optional<Integer>> f = (x -> {
+            if (x == null) return Optional.ofNullable(-1);
+            else return Optional.ofNullable(null);
+        });
+        System.out.println(
+            Optional.ofNullable((Integer) null).flatMap(f).equals(f.apply(null))
+        ); // false
+    }    
+}
+\end{minted}
+
+The problem\footnote{It might be interesting to note that there are \href{https://gist.github.com/ms-tg/7420496}{arguments for the contrary} (that Java's Optional preserves left-identity) that have been rightly debunked.} here arises only when a null value is both passed to the left-hand and right-hand sides. The idea is that the left-hand side immediately returns an Optional.empty() object as defined in the source, while the right-hand side results in the creation of a new Optional object as defined by the Function f. This result has significant implications on the use of Java's Optional class as part of one's functional programming paradigm, since referential transparency can be threatened.
+
+Testing right-identity:
+\begin{minted}{java}
+import java.util.Optional;
+
+public class OptionalTestRightIdentity {
+    public static void main(String[] args) {
+        Optional<Integer> m = Optional.ofNullable(null);
+        System.out.println(m.flatMap(Optional::ofNullable).equals(m)); // false
+    }    
+}
+\end{minted}
+
+On the other hand, right-identity is preserved because it does not deal with nor depend on the implementation of the Function f. Lastly, we test associativity of flatMap:
+
+\begin{minted}{java}
+import java.util.function.Function;
+import java.util.Optional;
+
+public class OptionalTestAssociativity {
+    public static void main(String[] args) {
+        Function<Integer, Optional<Integer>> f = x -> {
+            (x % 2 == 0) ? Optional.ofNullable(null) 
+            : Optional.ofNullable(x);
+        }
+        Function<Integer, Optional<Integer>> g = y -> {
+            (y == null)  ? Optional.ofNullable(null) 
+            : Optional.ofNullable(y);
+        }
+        Optional<Integer> m = Optional.of(2);
+        Optional<Integer> lhs = m.flatMap(f).flatMap(g);
+        Optional<Integer> rhs = m.flatMap(y -> f.apply(y).flatMap(g));
+        System.out.println(lhs.equals(rhs); // true
+    }
+}
+\end{minted}
+
+Crucially, while map\footnote{Covered in this \href{https://www.sitepoint.com/how-optional-breaks-the-monad-laws-and-why-it-matters/}{article}.} might not preserve the Monad Law of associativity, flatMap\footnote{Also shown in the code snippet in footnote 10.} does. 
+
+Having built a functional version of the Maybe monad in Java, and then verifying the validity of the Java built-in monadic Optional class, it is apparent that the Optional monad has several benefits over more orthodox imperative null-checking that we are used to, namely in minimising boilerplate, increasing readability and maintainability, encapsulating implementation details (in this case of error-checking), and composing functions. With implementing a monad class, we get most of the benefits that functional programming provides while using the class, such as referential transparency\footnote{As we have seen above, referential transparency breaks when one uses map() or encounters the failing scenario of left-identity.} and side-effect-free implementation\footnote{With regards to Java's Optional class, not using map() is one of the ways of achieving this.}.
+
+\subsubsection{Either Class}
+\label{sec:8}
+
+In Java, error-handling is most commonly done via throwing exceptions—for instance, when erroneous input is received that produces errors in method evaluation. In Haskell, the Either type is defined on two values, Left e and Right b, as in Either e b, with Left usually representing an error, and Right representing successful evaluation. In a similar flavour to Optional, one can devise a Java implementation \cite{result-monad-java} of Haskell's Either monad:
+
+\begin{minted}{java}
+import java.util.function.Function;
+import java.util.Optional;
+
+public class Either<E, A> {
+    private Optional<E> error;
+    private Optional<A> a;
+    
+    private Either(E error, A a) {
+        this.error = Optional.ofNullable(error);
+        this.a     = Optional.ofNullable(a);
+    }
+    public static <E, A> Either<E, A> unit(E error, A a) {
+        if (error != null) return new Either<>(error, null);
+        else return new Either<>(null, a);
+    }
+    public <B> Either<E, B> bind(Function<A, Either<E, B>> f) {
+        if (!isError()) return f.apply(a.get());
+        else return Either.unit(error.get(), (B) null);
+    }
+    boolean isError() {
+        return error.isPresent();
+    }
+    public String toString() {
+        if (!error.isPresent()) return "Right " + a.get();
+        else return "Left " + error.get();
+    }
+}
+\end{minted}
+
+Notice the following:
+\begin{itemize}
+    \item The two fields a and error are Optional-typed objects 
+    \item The get() method in bind's implementation is from Optional::get, which evidently has public visibility. This means that it has the potential to violate side-effect-free computation, especially if one uses it in this manner:
+    \begin{minted}{java}
+    Optional<Integer> m = Optional.of(3);
+    // One of the purposes of wrapping it in a monadic context is to minimise side effects.
+    // However, this is not pure:
+    int i = m.get() + 5; // i = 8
+    \end{minted}
+\end{itemize}
+
+The Either class can be used in this manner:
+
+\begin{minted}{java}
+public class EitherTest {
+    public static void main(String[] args) {
+        Either<Exception, Integer> a = either(3);
+        Either<Exception, Integer> b = either(5);
+        Either<Exception, Integer> c = either(null);
+        Either<Exception, Integer> sum = 
+            a.bind(e1 -> 
+            b.bind(e2 -> 
+            either(e1 + e2)
+        ));
+        Either<Exception, Integer> sum1 = 
+            a.bind(e1 -> 
+            c.bind(e2 -> 
+            either(e1 + e2)
+        ));
+        System.out.println(sum);  // Right 8
+        System.out.println(sum1); // Left java.lang.NumberFormatException
+    }
+    private static Either<Exception, Integer> either(Integer value) {
+        if (value == null) return Either.unit(new NumberFormatException(), null);
+        else return Either.unit(null, value);
+    }
+}
+\end{minted}
+
+Notice how in the above code, no explicit error-checking was performed, since the error-checking has been encapsulated in the Either type, as it should be! Also, no matter the order of calling bind, the Monad Laws ensure that the same result is produced, in an almost\footnote{Once again, refer to the Optional class section's discussion on violation of left-identity.} fully referential transparent manner.
+
+\subsubsection{Promise Class}
+\label{sec:9}
+
+Another main use of monads in Java, as evident by the built-in Future\footnote{\href{https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/Future.html}{Java Docs on Future class}} class, is streamlining asynchronous computation. In JQuery, promise\footnote{\href{https://api.jquery.com/promise/}{JQuery Docs on .promise()}} is the module containing methods that support asynchronous event-handling. In an analogous manner, a Promise\footnote{This implementation is adapted from Oleg Selajev's talk. \cite{oleg-selajev}} class in Java can be implemented using the core principles of Monads:
+
+First, assume the Promise class has these void methods defined:
+\begin{minted}{java}
+class Promise<V> {
+    void invokeWithException(Throwable t);
+    void invoke(V v); 
+    void onRedeem(Action<Promise<V>> callback);
+}
+\end{minted}
+
+The actual Monadic method implementations:
+\begin{minted}{java}
+public class Promise<V> {
+    // ... Fields, Constructors and other methods ...
+
+    public static <V> Promise<V> unit(final V v) {
+        Promise<V> p = new Promise<>();
+        p.invoke();
+        return p;
+    }
+    public <R> Promise<R> bind(Function<V, Promise<R>> f) {
+        Promise<R> result = new Promise<>();
+        this.onRedeem(callback -> {
+            V v = callback.get();
+            Promise<R> applicationResult = function.apply(v);
+            applicationResult.onRedeem(c -> {
+                R r = c.get();
+                result.invoke(r);
+            });
+        });
+        return result;
+    }
+    public V get() throws InterruptedException, ExecutionException {
+        taskLock.await();
+        if (exception != null) {
+            throw new ExecutionException(exception);
+        }
+        return result;
+    }
+}
+\end{minted}
+
+The most important takeaways from the above code:
+
+\begin{itemize}
+    \item The three Monad Laws are obeyed by this Promise class
+    \item Again, the get() method makes real-world use of this API much more practical but potentially introduces side effects, although one can use this Promise or Java's built-in CompletableFuture class without having to explicitly extract the value via get(), to stay more aligned with the functional programming paradigm
+\end{itemize}
+
+\subsection{Limitations of Java Monads}
+\label{sec:10}
+
+By defining monads in Java by way of individual classes, we have implemented instances of monads, but not the monad type. In order to achieve the latter, we must devise a generic higher-order interface that can describe the rules that all monad instances must follow. In Haskell lingo, this refers to the Monad Typeclass\footnote{This is defined in \ref{sec:5}.}. To achieve this in Java, we must define a ``TypeInterface" \cite{eric-lippert-generic-monad-typeinterface} as such:
+
+\begin{minted}{java}
+TypeInterface Monad<M> {
+    static <A>    M<A> unit(A a);
+    static <A, B> M<B> bind(M<A> m, Function<A, M<B>> f);
+}
+\end{minted}
+
+Notice that these method definitions were alluded to in \ref{sec:5}, when devising Java analogues to Haskell's monadic return and $(>>=)$. The key idea is that because Java's type system is built on classes and parametric polymorphism, with its generics type system and ``highest-order" type being at the class level, it is only really capable of defining monad instances, and not the generic monad type that is present in Haskell and other functional languages. In Haskell, m is defined as a type that implements the two main operations return and $(>>=)$. In the Java analogue, $M \langle A \rangle$ is defined as a class M parametrized with type A. It is important to note here that while describing m in Haskell as a type makes sense, in Java it is not right to describe M as a type analogous to Haskell's m.
+
+Eric Lippert describes a Java class as ``a name for a set of values that have something in common, such that any one of those values can be used when an instance of the class is required." In other words a class is just a set of all ``like" instances. In contrast, a class in Haskell ``is not a kind of type", but ``describes a set of types". In short, in Java, a class is higher than an instance (object), so Java has ``two levels"\footnote{In Eric Lippert's response \cite{eric-lippert-generic-monad-typeinterface}, he mentions how Java's generic type system actually adds a layer to the Java type hierarchy, but also that Haskell would then have four layers.}, while in Haskell, a class is higher than a type, which is higher than an instance, so Haskell has ``three levels". This is why the M type that was used in the ``TypeInterface" definition above cannot exist in Java, precisely because there is no ``TypeInterface" Typeclass that is higher-order than the $M \langle A \rangle$ class.
+
+%
+% For  figures use
+%\begin{figure*}
+% Use the relevant command for your figure-insertion program
+% to insert the figure file. See example above.
+% If not, use
+%\vspace*{5cm}       % Give the correct figure height in cm
+%\includegraphics{leer.eps}
+%\caption{Please write your figure caption here}
+%\label{fig:2}       % Give a unique label
+%\end{figure*}
+% or  this
+%\begin{figure}
+%\centering
+% Use the relevant command for your figure-insertion program
+% to insert the figure file.
+% For example, with the option graphics use
+%\resizebox{0.75\textwidth}{!}{%
+%  \includegraphics{leer.eps}
+%}
+% If not, use
+%\vspace{5cm}       % Give the correct figure height in cm
+%\caption{Please write your figure caption here}
+%\label{fig:1}       % Give a unique label
+%\end{figure}
+%
+%
+% For tables use
+%\begin{table}
+%\centering
+%\caption{Please write your table caption here}
+%\label{tab:1}       % Give a unique label
+% For LaTeX tables use
+%\begin{tabular}{lll}
+%\hline\noalign{\smallskip}
+%first & second & third  \\
+%\noalign{\smallskip}\hline\noalign{\smallskip}
+%number & number & number \\
+%number & number & number \\
+%\noalign{\smallskip}\hline
+%\end{tabular}
+% Or use
+%\vspace*{5cm}  % with the correct table height
+%\end{table}
+
+
+%
+% BibTeX users please use
+% \bibliographystyle{}
+% \bibliography{}
+%
+% Non-BibTeX users please use
+\begin{thebibliography}{}
+%
+% and use \bibitem to create references.
+%
+\bibitem{optional-breaks-monad-laws}
+Marcello La Rocca. 2016. How Optional Breaks the Monad Laws and Why It Matters. (September 2016). Retrieved November 6, 2020 from \url{https://www.sitepoint.com/how-optional-breaks-the-monad-laws-and-why-it-matters/}
+
+\bibitem{result-monad-java}
+Andrés Castaño. 2016. Monads for Java developers, Part 2. (November 2016). Retrieved November 6, 2020 from \url{https://medium.com/@afcastano/monads-for-java-developers-part-2-the-result-and-log-monads-a9ecc0f231bb}
+
+\bibitem{monads-for-the-java-developer-castano}
+Andrés Castaño. 2016. Monads for the Java Developer Video. (3 November 2016). Retrieved November 6, 2020 from \url{https://www.youtube.com/watch?v=vePeILeSv4E&ab_channel=MelbJVM}
+
+\bibitem{producer-extends-consumer-super}
+Joshua Bloch. 2009. Effective Java - Still Effective After All These Years. pp 5-14. (October 2009). Retrieved November 6, 2020 \url{https://www.oracle.com/technetwork/server-storage/ts-5217-159242.pdf}
+
+\bibitem{oracle-generics-faq-wildcard}
+Angelika Langer. 2018. Java Generics FAQs - Type Arguments, FAQ 103. (August 2018). Retrieved November 6, 2020 from \url{http://www.angelikalanger.com/GenericsFAQ/FAQSections/TypeArguments.html#FAQ103}
+
+\bibitem{oleg-selajev}
+Oleg Šelajev. 2015. Unlocking the Magic of Monads in Java 8. (2 June 2015). Retrieved November 6, 2020 from \url{https://www.youtube.com/watch?v=nkUafcNWiQE&ab_channel=OracleDevelopers}
+
+\bibitem{eric-lippert-generic-monad-typeinterface}
+Eric Lippert. 2016. Top-voted response to "Why can the Monad interface not be declared in Java?". (March 2016). Retrieved November 6, 2020 from \url{https://stackoverflow.com/questions/35951818/why-can-the-monad-interface-not-be-declared-in-java}
+
+\bibitem{java-optional-source}
+David Katleman. 2014. OpenJDK Optional Class source code. (March 2014). Retrieved November 6, 2020 from \url{http://hg.openjdk.java.net/jdk8/jdk8/jdk/file/687fd7c7986d/src/share/classes/java/util/Optional.java}
+
+\bibitem{bert-f-generics}
+Bert Fernandez. 2010. Top-voted response to ``Difference between $<?$ super T$>$ and $<?$ extends T$>$ in Java". (December 2010). Retrieved November 6, 2020 from \url{https://stackoverflow.com/questions/4343202/difference-between-super-t-and-extends-t-in-java}
+
+\bibitem{io-monad-code}
+Jörg Rathlev. 2015. The IO monad (or something similar) in Java. (June 2015). Retrieved November 6, 2020 from \url{https://gist.github.com/joergrathlev/f17092d3470dcf732be6#file-demo-java-L23}
+
+\bibitem{optional-monad-laws-code}
+Marc Siegel. 2013. Does JDK8's Optional class satisfy the Monad laws? Yes, it does. (Nov 2013). Retrieved November 6, 2020 from \url{https://gist.github.com/ms-tg/7420496}
+
+\end{thebibliography}
+
+\end{document}
+
+% end of file template.tex
